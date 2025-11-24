@@ -1,10 +1,7 @@
-
-// Google スプレッドシートの公開 CSV URL
-const SHEET_URL = process.env.SHEET_URL ?? "";
-
 // 1 行分のデータ型
 export type Row = Record<string, string>;
 ;
+
 
 /* ================= System prompt ================= */
 

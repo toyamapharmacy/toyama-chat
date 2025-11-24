@@ -3,6 +3,8 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
+
 function validateSignature(bodyText: string, signature: string | null): boolean {
   // シグネチャが無ければ NG
   if (!signature) return false;
@@ -23,9 +25,32 @@ function validateSignature(bodyText: string, signature: string | null): boolean 
 
   return hmac === signature;
 }
+async function replyText(replyToken: string, text: string) {
+  const url = "https://api.line.me/v2/bot/message/reply";
 
-const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? "";
-const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    console.error("LINE reply API error", await res.text());
+    throw new Error("Failed to reply message to LINE");
+  }
+}
+
 
 // LINE 署名の検証
 function verifyLineSignature(signature: string, body: string): boolean {

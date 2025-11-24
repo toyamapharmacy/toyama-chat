@@ -3,6 +3,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
 
 function validateSignature(bodyText: string, signature: string | null): boolean {

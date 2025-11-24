@@ -3,6 +3,27 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+function validateSignature(bodyText: string, signature: string | null): boolean {
+  // シグネチャが無ければ NG
+  if (!signature) return false;
+
+  const channelSecret = process.env.LINE_CHANNEL_SECRET ?? "";
+
+  // 開発中に secret 未設定でブロックされるのを避けたいなら、
+  // ここで true を返してスキップしてもOK（本番は必ず設定推奨）
+  if (!channelSecret) {
+    console.warn("LINE_CHANNEL_SECRET が設定されていません。署名チェックをスキップします。");
+    return true;
+  }
+
+  const hmac = crypto
+    .createHmac("sha256", channelSecret)
+    .update(bodyText)
+    .digest("base64");
+
+  return hmac === signature;
+}
+
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? "";
 const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
 

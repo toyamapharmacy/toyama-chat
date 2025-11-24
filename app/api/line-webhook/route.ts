@@ -2,6 +2,15 @@
 // app/api/line-webhook/route.ts
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+import {
+  SHEET_URL,
+  SYSTEM_PROMPT,
+  parseCsv,
+  searchPharmacies,
+  formatPharmaciesForPrompt,
+} from "@/lib/pharmacy";
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
@@ -52,15 +61,6 @@ async function replyText(replyToken: string, text: string) {
   }
 }
 
-
-// LINE 署名の検証
-function verifyLineSignature(signature: string, body: string): boolean {
-  const hmac = crypto
-    .createHmac("sha256", CHANNEL_SECRET)
-    .update(body)
-    .digest("base64");
-  return hmac === signature;
-}
          
 export async function POST(req: NextRequest) {
   const bodyText = await req.text();

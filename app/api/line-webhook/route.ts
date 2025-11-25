@@ -112,23 +112,23 @@ export async function POST(req: NextRequest) {
     }
 
     // ---------- ここから先を再度有効化すると Gemini 要約モード ----------
-    const client = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const res = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: SYSTEM_PROMPT },
-            { text: `ユーザーの質問：${userText}` },
-            { text: `候補薬局リスト：\n${listText}` },
-          ],
-        },
-      ],
-    });
+const chat = model.startChat({ history: [] });
 
-    const aiText = res.response.text().trim() || listText;
+const msg = `
+${systemPrompt}
+
+▼ユーザーの質問
+${userText}
+
+▼候補薬局リスト
+${listText}
+`;
+
+const aiRes = await chat.sendMessage(msg);
+const aiText = aiRes.response.text();
     await replyText(event.replyToken, aiText.slice(0, 4000));
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -1,28 +1,27 @@
 // app/api/line-webhook/route.ts
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 import {
   parseCsv,
   searchPharmacies,
   formatPharmaciesForPrompt,
   SYSTEM_PROMPT,
 } from "@/lib/pharmacy";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// 環境変数
-const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? "";
 const LINE_CHANNEL_ACCESS_TOKEN =
   process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
+const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET ?? "";
 const SHEET_URL = process.env.SHEET_URL ?? "";
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
 
-/* ========== LINE 署名検証 ========== */
+// 署名検証
 function validateSignature(bodyText: string, signature: string | null): boolean {
   if (!signature) return false;
 
   if (!LINE_CHANNEL_SECRET) {
     console.warn(
-      "LINE_CHANNEL_SECRET が未設定のため署名チェックをスキップします。"
+      "LINE_CHANNEL_SECRET が設定されていません。署名チェックをスキップします。"
     );
     return true;
   }
@@ -35,7 +34,7 @@ function validateSignature(bodyText: string, signature: string | null): boolean 
   return hmac === signature;
 }
 
-/* ========== LINE 返信ヘルパー ========== */
+// テキスト返信
 async function replyText(replyToken: string, text: string) {
   const url = "https://api.line.me/v2/bot/message/reply";
 
@@ -47,12 +46,7 @@ async function replyText(replyToken: string, text: string) {
     },
     body: JSON.stringify({
       replyToken,
-      messages: [
-        {
-          type: "text",
-          text,
-        },
-      ],
+      messages: [{ type: "text", text }],
     }),
   });
 
@@ -66,7 +60,6 @@ export async function POST(req: NextRequest) {
   const bodyText = await req.text();
   const signature = req.headers.get("x-line-signature");
 
-  // 署名チェック
   if (!validateSignature(bodyText, signature)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
@@ -74,6 +67,10 @@ export async function POST(req: NextRequest) {
   const body = JSON.parse(bodyText);
   const event = body.events?.[0];
   const userText: string = event?.message?.text ?? "";
+
+  if (!event || !userText) {
+    return NextResponse.json({ ok: true });
+  }
 
   // デバッグ用ルート
   if (userText === "テスト") {
@@ -87,7 +84,8 @@ export async function POST(req: NextRequest) {
       throw new Error("SHEET_URL が設定されていません");
     }
 
-    const csv = await fetch(SHEET_URL).then((r) => r.text());
+    const csvRes = await fetch(SHEET_URL);
+    const csv = await csvRes.text();
     const records = parseCsv(csv);
 
     // 2) 検索
@@ -101,23 +99,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 3) まずは「そのままリスト」を作る
+    // 3) Gemini で要約
     const listText = formatPharmaciesForPrompt(result);
+    const systemPrompt = SYSTEM_PROMPT;
 
-    // ▼ ここではいったん Gemini を *必須にしない*
-    if (!GEMINI_API_KEY) {
-      // Gemini が使えない場合は、そのままリストを返す
-      await replyText(event.replyToken, listText.slice(0, 4000));
-      return NextResponse.json({ ok: true });
-    }
-
-    // ---------- ここから先を再度有効化すると Gemini 要約モード ----------
-// 3) LLM（Gemini）で要約を作る
-const listText = formatPharmaciesForPrompt(result);
-
-// ★ ここで直接 SYSTEM_PROMPT を使う（systemPrompt という変数は使わない）
-const msg = `
-${SYSTEM_PROMPT}
+    const msg = `
+${systemPrompt}
 
 ▼ユーザーの質問
 ${userText}
@@ -126,11 +113,20 @@ ${userText}
 ${listText}
 `.trim();
 
-const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+    const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-const geminiRes = await model.generateContent(msg);
-const aiText = geminiRes.response.text().trim() || listText;
+    const res = await model.generateContent(msg);
+    const aiText = res.response.text().trim() || listText;
 
-await replyText(event.replyToken, aiText.slice(0, 4000));
-return NextResponse.json({ ok: true });
+    await replyText(event.replyToken, aiText.slice(0, 4000));
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("LINE webhook error", err);
+    await replyText(
+      event.replyToken,
+      "システム側でエラーが発生しました。時間をおいてもう一度お試しください。"
+    );
+    return NextResponse.json({ ok: false });
+  }
+}

@@ -112,31 +112,25 @@ export async function POST(req: NextRequest) {
     }
 
     // ---------- ここから先を再度有効化すると Gemini 要約モード ----------
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// 3) LLM（Gemini）で要約を作る
+const listText = formatPharmaciesForPrompt(result);
 
-const chat = model.startChat({ history: [] });
-
+// ★ ここで直接 SYSTEM_PROMPT を使う（systemPrompt という変数は使わない）
 const msg = `
-${systemPrompt}
+${SYSTEM_PROMPT}
 
 ▼ユーザーの質問
 ${userText}
 
 ▼候補薬局リスト
 ${listText}
-`;
+`.trim();
 
-const aiRes = await chat.sendMessage(msg);
-const aiText = aiRes.response.text();
-    await replyText(event.replyToken, aiText.slice(0, 4000));
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error("LINE webhook error", err);
-    await replyText(
-      event.replyToken,
-      "システム側でエラーが発生しました。時間をおいてもう一度お試しください。"
-    );
-    return NextResponse.json({ ok: false });
-  }
-}
+const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const model = client.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+const geminiRes = await model.generateContent(msg);
+const aiText = geminiRes.response.text().trim() || listText;
+
+await replyText(event.replyToken, aiText.slice(0, 4000));
+return NextResponse.json({ ok: true });
